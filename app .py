@@ -320,12 +320,13 @@ def top_nav():
     )
 
     if st.session_state.role == "personnel":
-        cols = st.columns(5)
+        cols = st.columns(6)
         labels = [
             ("🏠 Home", "dashboard"),
             ("🧠 Assessment", "assessment"),
             ("🎮 Relax & Focus", "games"),
             ("📈 My History", "history"),
+            ("💬 Talk to Buddy", "chat"),
             ("🚪 Logout", "logout")
         ]
         for c, (label, page) in zip(cols, labels):
@@ -580,6 +581,125 @@ def history_page():
     st.plotly_chart(fig, use_container_width=True)
 
 # -------------------------
+# VALOR BUDDY (CHATBOT)
+# -------------------------
+CHECKIN_FILE = "valormind_checkins.json"
+
+CRISIS_WORDS = ["suicide", "kill myself", "end my life", "self harm", "hurt myself", "khudkushi",
+                "marna chahta", "marna chahti", "mar jaun", "jeena nahi", "zindagi khatam"]
+LOW_WORDS = ["sad", "low", "bad", "tired", "stress", "upset", "down", "tension", "anxious", "worried",
+             "udaas", "thak", "pareshan", "bura", "ghabra", "akela", "lonely"]
+GOOD_WORDS = ["good", "fine", "great", "happy", "ok", "okay", "theek", "achha", "accha", "badhiya", "mast"]
+
+def save_checkin(username, data):
+    all_c = load_json(CHECKIN_FILE, {})
+    all_c.setdefault(username, [])
+    data["date"] = now_ist().strftime("%Y-%m-%d %H:%M")
+    all_c[username].append(data)
+    save_json(CHECKIN_FILE, all_c)
+
+def get_checkins(username):
+    return load_json(CHECKIN_FILE, {}).get(username, [])
+
+def detect_mood(text):
+    t = text.lower()
+    if any(w in t for w in LOW_WORDS):
+        return "Low"
+    if any(w in t for w in GOOD_WORDS):
+        return "Good"
+    return "Okay"
+
+def support_reply(text):
+    t = text.lower()
+    if any(w in t for w in ["tired", "thak", "neend", "sleep"]):
+        return "Thakaan bilkul natural hai. Thoda rest zaroori hai. Relax & Focus mein 1-minute breathing reset try kar sakte hain."
+    if any(w in t for w in ["stress", "tension", "pressure", "anxious", "ghabra"]):
+        return "Pressure mehsoos hona kamzori nahi hai. Ek gehri saans lein aur apne kisi bharosemand saathi se baat karein, halka feel hoga."
+    if any(w in t for w in ["family", "ghar", "miss", "yaad"]):
+        return "Ghar aur family ki yaad aana bahut natural hai. Kya aaj unse baat karne ka mauka mil sakta hai?"
+    if any(w in t for w in ["alone", "akela", "lonely"]):
+        return "Aap akele nahi hain. Apne saathiyon ya senior se ek chhoti si baat bhi kaafi madad karti hai."
+    if any(w in t for w in ["angry", "gussa", "irritat"]):
+        return "Gussa aana insaani hai. Thoda paani piyein, kuch minute sanaa lein, aur agar chahein toh mujhe bataiye kya hua."
+    if any(w in t for w in ["thank", "shukriya", "dhanyavad"]):
+        return "Aapka swagat hai. Main yahan hoon jab bhi baat karni ho. Khayal rakhiye. 💙"
+    return random.choice([
+        "Main sun raha hoon. Thoda aur bataiye?",
+        "Aapki baat samajh aa rahi hai. Aur kya chal raha hai mann mein?",
+        "Shukriya batane ke liye. Aap kaisa mehsoos kar rahe hain ab?",
+    ])
+
+def chat_logic(text):
+    ss = st.session_state
+    t = text.lower()
+    if any(w in t for w in CRISIS_WORDS):
+        return ("Aapne jo kaha woh bahut zaroori hai, aur aap akele nahi hain. Abhi kisi bharosemand insaan "
+                "(senior, saathi ya family) se baat karein. India mein Tele-MANAS **14416** (free, 24x7) par bhi "
+                "baat kar sakte hain. Agar turant khatra ho toh **112** par call karein. Main ek AI hoon aur "
+                "professional madad ka vikalp nahi hoon.")
+    step = ss.chat_step
+    d = ss.chat_data
+    if step == 0:
+        d["mood"] = detect_mood(text)
+        ss.chat_step = 1
+        pre = "Sunke achha laga." if d["mood"] == "Good" else "Main samajh sakta hoon, shukriya batane ke liye."
+        return pre + " Ab ek chhota sawal: aaj aapka **stress** 0 se 10 mein kitna hai? (0 = bilkul nahi, 10 = bahut zyada)"
+    if step in (1, 3):
+        m = re.search(r"\d+(\.\d+)?", text)
+        if not m or not (0 <= float(m.group()) <= 10):
+            return "Kripya 0 se 10 ke beech ek number likhein."
+        val = int(round(float(m.group())))
+        if step == 1:
+            d["stress"] = val
+            ss.chat_step = 2
+            extra = "Itna stress heavy lagta hai, ise halke mein mat lijiye. " if val >= 7 else ""
+            return extra + "Kal raat aap **kitne ghante** soye? (jaise 6 ya 7.5)"
+        d["fatigue"] = val
+        ss.chat_step = 4
+        return "Shukriya. Aakhri sawal: koi aur baat jo dil mein ho? Likhein, ya 'skip' likh dein."
+    if step == 2:
+        m = re.search(r"\d+(\.\d+)?", text)
+        if not m or not (0 <= float(m.group()) <= 12):
+            return "Kripya 0 se 12 ke beech ghante likhein (jaise 6 ya 7.5)."
+        d["sleep"] = float(m.group())
+        ss.chat_step = 3
+        return "Aaj aap kitna **thaka hua** mehsoos kar rahe hain, 0 se 10 mein?"
+    if step == 4:
+        reply = "" if t.strip() == "skip" else support_reply(text) + "\n\n"
+        rec = {"mood": d["mood"], "stress": d["stress"], "fatigue": d["fatigue"], "sleep": d["sleep"]}
+        save_checkin(ss.user, dict(rec))
+        ss.checkin = {**rec, "date": now_ist().strftime("%Y-%m-%d %H:%M")}
+        ss.chat_step = 5
+        return (reply + f"✅ Aapka check-in save ho gaya: Mood **{rec['mood']}**, Stress **{rec['stress']}/10**, "
+                f"Neend **{rec['sleep']} h**, Thakaan **{rec['fatigue']}/10**. Sirf yeh numbers save hue hain, "
+                "hamari baatcheet nahi. Aap chahein toh aur baat kar sakte hain.")
+    return support_reply(text)
+
+def chat_page():
+    top_nav()
+    st.title("💬 VALOR Buddy")
+    st.caption("A private, friendly space to talk. I'm an AI companion, not a doctor or counsellor. "
+               "Only your check-in numbers are saved, never the chat text.")
+    ss = st.session_state
+    if "chat_msgs" not in ss:
+        ss.chat_step = 0
+        ss.chat_data = {}
+        ss.chat_msgs = [("assistant", "Namaste! 👋 Main VALOR Buddy hoon. Aap English ya Hindi mein baat kar sakte hain. "
+                                       "Batayiye, aaj aap kaisa feel kar rahe hain?")]
+    for role, text in ss.chat_msgs:
+        with st.chat_message(role):
+            st.markdown(text)
+    prompt = st.chat_input("Yahan likhein...")
+    if prompt:
+        ss.chat_msgs.append(("user", prompt))
+        ss.chat_msgs.append(("assistant", chat_logic(prompt)))
+        st.rerun()
+    if st.button("🔄 New chat"):
+        for k in ["chat_msgs", "chat_step", "chat_data"]:
+            ss.pop(k, None)
+        st.rerun()
+
+# -------------------------
 # GAMES
 # -------------------------
 REACTION_HTML = """
@@ -797,6 +917,16 @@ def admin_dashboard():
         with b: st.metric("Trend", row["Trend"])
         with c: st.metric("Last Assessment", row["Last Assessment"])
 
+        cks = get_checkins(selected)
+        if cks:
+            ck = cks[-1]
+            st.caption(f'Latest voluntary chat check-in ({ck["date"]}) - numbers only, no chat text')
+            k1, k2, k3, k4 = st.columns(4)
+            with k1: st.metric("Mood", ck["mood"])
+            with k2: st.metric("Stress", f'{ck["stress"]}/10')
+            with k3: st.metric("Fatigue", f'{ck["fatigue"]}/10')
+            with k4: st.metric("Sleep", f'{ck["sleep"]} h')
+
         h = get_history(selected)
         if h:
             df = pd.DataFrame(h)
@@ -827,6 +957,8 @@ else:
             games_page()
         elif st.session_state.page == "checkin":
             checkin_page()
+        elif st.session_state.page == "chat":
+            chat_page()
         else:
             personnel_dashboard()
     elif st.session_state.role == "admin":
