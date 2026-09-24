@@ -330,7 +330,7 @@ def top_nav():
         ]
         for c, (label, page) in zip(cols, labels):
             with c:
-                if st.button(label, use_container_width=True):
+                if st.button(label, use_container_width=True, key=f"nav_{page}"):
                     if page == "logout":
                         logout()
                     else:
