@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import json, os, hashlib, random, time, re
-import streamlit.components.v1 as components 
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 
 def now_ist():
@@ -389,7 +389,7 @@ def personnel_dashboard():
     st.subheader("📈 Personal Trend")
     if history:
         vals = [x["score"] for x in history]
-        dates = [x["date"] for x in history]
+        dates = [f"#{i+1}" for i in range(len(history))]
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=dates, y=vals, mode="lines+markers",
@@ -572,7 +572,7 @@ def history_page():
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=df["date"], y=df["score"],
+        x=[f"#{i+1}" for i in range(len(df))], y=df["score"],
         mode="lines+markers",
         name="Risk Index"
     ))
@@ -801,7 +801,7 @@ def admin_dashboard():
         if h:
             df = pd.DataFrame(h)
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df["date"], y=df["score"], mode="lines+markers"))
+            fig.add_trace(go.Scatter(x=[f"#{i+1}" for i in range(len(df))], y=df["score"], mode="lines+markers"))
             fig.update_layout(title="Risk Trend", template="plotly_white", height=300)
             st.plotly_chart(fig, use_container_width=True)
             st.info("Officer view intentionally presents summarized welfare information rather than unrestricted raw personal data.")
