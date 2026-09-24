@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import json, os, hashlib, random, time, re
-import streamlit.components.v1 as components
+import streamlit.components.v1 as components 
 from datetime import datetime, timedelta
 
 def now_ist():
